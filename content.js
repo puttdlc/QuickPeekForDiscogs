@@ -13,11 +13,8 @@ style.textContent = `
     color: #f0f0f0;
     border: 1px solid #444;
     border-radius: 10px;
-    padding: 12px;
     width: 200px;
-    max-height: 360px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     font-family: sans-serif;
     font-size: 14px;
@@ -25,6 +22,13 @@ style.textContent = `
     opacity: 0;
     transform: scale(0.95);
     transition: opacity 0.15s ease, transform 0.2s ease, width 0.2s ease, box-shadow 0.2s ease;
+  }
+  /* Inner scroll wrapper — keeps content scrollable without background bleed */
+  .dqp-scroll-inner {
+    max-height: 360px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
   }
   /* Bouncy pop-in animation */
   .dqp-tooltip.visible {
@@ -370,6 +374,9 @@ function showTooltip(data, x, y) {
   tooltip = document.createElement("div");
   tooltip.className = "dqp-tooltip";
 
+  const scrollInner = document.createElement("div");
+  scrollInner.className = "dqp-scroll-inner";
+
   // Pick the right layout based on what Discogs identified
   let content;
   if (data.type === "artist") {
@@ -379,7 +386,7 @@ function showTooltip(data, x, y) {
   } else {
     content = buildReleaseLayout(data);
   }
-  tooltip.appendChild(content);
+  scrollInner.appendChild(content);
 
   // "View on Discogs" link at the bottom of every layout
   const link = document.createElement("a");
@@ -387,7 +394,9 @@ function showTooltip(data, x, y) {
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = "View on Discogs →";
-  tooltip.appendChild(link);
+  scrollInner.appendChild(link);
+
+  tooltip.appendChild(scrollInner);
 
   document.body.appendChild(tooltip);
 

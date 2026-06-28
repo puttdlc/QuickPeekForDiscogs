@@ -1,3 +1,56 @@
+/*
+ * background.js — Service worker for Discogs Quick Peek
+ *
+ * FLOW
+ * ────
+ * 1. User selects text and either:
+ *    a. Right-clicks → "Search Discogs for …" context menu item, or
+ *    b. Releases mouse (mouseup) with Instant Lookup enabled in the popup.
+ *    Either path sends a CONTEXT_LOOKUP / LOOKUP message to content.js,
+ *    which forwards a LOOKUP message here.
+ *
+ * 2. LOOKUP handler (bottom of this file):
+ *    a. Reads the stored Discogs API token from chrome.storage.sync.
+ *    b. Calls the Discogs /database/search endpoint with the raw query,
+ *       requesting 25 results.
+ *    c. Passes all 25 results through pickBestResult(), which scores each
+ *       one by title-word overlap with the query plus community popularity,
+ *       returning the best candidate instead of blindly taking results[0].
+ *    d. Branches on the winning result's type (artist / track / master /
+ *       release) and calls the appropriate handler below.
+ *    e. Sends { ok: true, type, data } back to content.js, which renders
+ *       the tooltip.
+ *
+ * HANDLERS
+ * ────────
+ * handleArtist  — /artists/{id} + /artists/{id}/releases
+ *                 Returns name, profile photo, genre tags, and top-5
+ *                 releases sorted by year descending.
+ *
+ * handleMaster  — /masters/{id}
+ *                 Returns title, year, cover art, and full tracklist.
+ *                 "Master" is Discogs's canonical grouping of a release
+ *                 across all pressings/formats.
+ *
+ * handleRelease — /releases/{id}
+ *                 Same shape as master but for a specific pressing, so it
+ *                 also carries the format (Vinyl, CD, etc.).
+ *
+ * handleTrack   — /masters/{master_id} (resolved from the search result)
+ *                 Returns the individual track title alongside its parent
+ *                 album's cover, title, and artist.
+ *
+ * RESULT SCORING (pickBestResult)
+ * ───────────────────────────────
+ * score = (titleOverlap / queryWordCount) × 3
+ *       + log10(community.have + community.want + 1) × 0.5
+ *       + 0.3 if type === "master"
+ *
+ * Title overlap is the primary signal; popularity breaks ties so a
+ * well-known release beats a niche one that happens to share a few words.
+ * Stop words are stripped before comparison to reduce false matches.
+ */
+
 // Right-click context menu registration
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -50,7 +103,7 @@ async function handleArtist(id, token) {
     name: artistData.name,
     artistThumb: artistData.images?.[0]?.uri ?? null,
     genres,
-    url: artistData.uri ? `https://www.discogs.com${artistData.uri}` : `https://www.discogs.com/artist/${id}`,
+    url: artistData.uri ?? `https://www.discogs.com/artist/${id}`,
     releases
   };
 }
@@ -69,7 +122,7 @@ async function handleMaster(id, token) {
       title: t.title,
       duration: t.duration
     })),
-    url: data.uri ? `https://www.discogs.com${data.uri}` : `https://www.discogs.com/master/${id}`
+    url: data.uri ?? `https://www.discogs.com/master/${id}`
   };
 }
 
@@ -87,7 +140,7 @@ async function handleRelease(id, token) {
       title: t.title,
       duration: t.duration
     })),
-    url: data.uri ? `https://www.discogs.com${data.uri}` : `https://www.discogs.com/release/${id}`
+    url: data.uri ?? `https://www.discogs.com/release/${id}`
   };
 }
 
@@ -102,8 +155,46 @@ async function handleTrack(firstResult, token) {
     artist: data.artists?.[0]?.name ?? null,
     year: data.year,
     coverThumb: data.images?.[0]?.uri ?? firstResult.cover_image,
-    url: data.uri ? `https://www.discogs.com${data.uri}` : `https://www.discogs.com/master/${masterId}`
+    url: data.uri ?? `https://www.discogs.com/master/${masterId}`
   };
+}
+
+// Words that add noise to title matching — filtered before scoring
+const STOP_WORDS = new Set(["the","a","an","and","or","of","in","on","at","to","for","with","by","from","is","it","as","s"]);
+
+function tokenize(str) {
+  return str.toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOP_WORDS.has(w));
+}
+
+// Score each result against the raw query; higher = better match.
+// Combines title word overlap (most important) with community popularity
+// so a well-known release beats a niche one with a few matching words.
+function pickBestResult(results, query) {
+  const queryTokens = tokenize(query);
+  if (!queryTokens.length) return results[0];
+
+  let best = results[0];
+  let bestScore = -Infinity;
+
+  for (const result of results) {
+    const titleTokens = new Set(tokenize(result.title || ""));
+    const overlap = queryTokens.filter(t => titleTokens.has(t)).length;
+    const titleScore = overlap / queryTokens.length;
+
+    const popularity = (result.community?.have || 0) + (result.community?.want || 0);
+    const popularityScore = Math.log10(popularity + 1);
+
+    // Masters are canonical entries — slight preference over duplicate releases
+    const typeBonus = result.type === "master" ? 0.3 : 0;
+
+    const score = titleScore * 3 + popularityScore * 0.5 + typeBonus;
+    if (score > bestScore) { bestScore = score; best = result; }
+  }
+
+  return best;
 }
 
 // Main message listener — searches Discogs, detects result type, delegates to handler
@@ -114,17 +205,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const { token } = await chrome.storage.sync.get("token");
         if (!token) throw new Error("No Discogs token set. Open the extension popup to add one.");
 
-        // Search without a type filter so Discogs returns its best match
         const searchRes = await fetch(
-          `https://api.discogs.com/database/search?q=${encodeURIComponent(message.query)}&token=${token}`
+          `https://api.discogs.com/database/search?q=${encodeURIComponent(message.query)}&per_page=25&token=${token}`
         );
         if (!searchRes.ok) throw new Error(`Discogs API error: ${searchRes.status}`);
         const searchData = await searchRes.json();
 
         if (!searchData.results?.length) throw new Error("No results found for: " + message.query);
 
-        // Branch on what Discogs identified the top result as
-        const firstResult = searchData.results[0];
+        // Rank the top 25 results by title overlap + popularity
+        const firstResult = pickBestResult(searchData.results, message.query);
         let type, data;
 
         if (firstResult.type === "artist") {
