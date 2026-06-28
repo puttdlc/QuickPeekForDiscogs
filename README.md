@@ -1,4 +1,4 @@
-# Discogs Quick-Peek
+# Discogs Quick-Peek ! [Discogs Quick-Peek icon](icons/icon128.png)
 
 **Selection Lookup for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
 
