@@ -35,11 +35,11 @@ saveBtn.addEventListener("click", () => {
   }
 
   chrome.storage.sync.set({ token }, () => {
-    showStatus("Token saved!", "success");
+    showStatus("Token saved! Reload any open tabs for the extension to activate.", "success");
     setTimeout(() => {
       status.textContent = "";
       status.className = "";
-    }, 2500);
+    }, 5000);
   });
 });
 
