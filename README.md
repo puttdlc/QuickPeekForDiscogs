@@ -6,6 +6,20 @@ This extension is built on the Manifest V3 Chrome extension specification, turni
 
 ---
 
+## Jump to
+
+- [What it does](#what-it-does)
+- [How it works](#how-it-works)
+- [Setup](#setup)
+- [Permissions](#permissions)
+- [Discogs API reference](#discogs-api-reference)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+- [Privacy](#privacy)
+- [Disclaimer](#disclaimer)
+- [Credits](#credits)
+- [License](#license)
+
 ## What it does
 
 Quick-Peek puts the Discogs database one selection away from any text on the web:
