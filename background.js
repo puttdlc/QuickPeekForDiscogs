@@ -86,7 +86,7 @@ async function handleArtist(id, token) {
   const releases = allReleases
     .sort((a, b) => (b.year || 0) - (a.year || 0))
     .slice(0, 5)
-    .map(r => ({ title: r.title, year: r.year, coverThumb: r.thumb }));
+    .map(r => ({ id: r.id, type: r.type, title: r.title, year: r.year, coverThumb: r.thumb }));
 
   // Genres live on releases, not on the artist — pull from the first available entry
   let genres = [];
@@ -113,10 +113,13 @@ async function handleMaster(id, token) {
   const res = await fetch(`https://api.discogs.com/masters/${id}?token=${token}`);
   const data = await res.json();
   return {
+    id: data.id,
+    itemType: "master",
     title: data.title,
     year: data.year,
     coverThumb: data.images?.[0]?.uri ?? null,
     format: null,
+    artists: (data.artists || []).map(a => ({ id: a.id, name: a.name })),
     tracklist: (data.tracklist || []).map(t => ({
       position: t.position,
       title: t.title,
@@ -131,10 +134,13 @@ async function handleRelease(id, token) {
   const res = await fetch(`https://api.discogs.com/releases/${id}?token=${token}`);
   const data = await res.json();
   return {
+    id: data.id,
+    itemType: "release",
     title: data.title,
     year: data.year,
     coverThumb: data.images?.[0]?.uri ?? data.thumb,
     format: data.formats?.[0]?.name ?? null,
+    artists: (data.artists || []).map(a => ({ id: a.id, name: a.name })),
     tracklist: (data.tracklist || []).map(t => ({
       position: t.position,
       title: t.title,
@@ -152,7 +158,10 @@ async function handleTrack(firstResult, token) {
   return {
     trackTitle: firstResult.title,
     albumTitle: data.title,
+    albumId: masterId,
+    albumType: "master",
     artist: data.artists?.[0]?.name ?? null,
+    artistId: data.artists?.[0]?.id ?? null,
     year: data.year,
     coverThumb: data.images?.[0]?.uri ?? firstResult.cover_image,
     url: data.uri ?? `https://www.discogs.com/master/${masterId}`
@@ -187,10 +196,15 @@ function pickBestResult(results, query) {
     const popularity = (result.community?.have || 0) + (result.community?.want || 0);
     const popularityScore = Math.log10(popularity + 1);
 
-    // Masters are canonical entries — slight preference over duplicate releases
-    const typeBonus = result.type === "master" ? 0.3 : 0;
+    // Artists first, then masters as canonical release entries
+    const typeBonus = result.type === "artist" ? 1.0 : result.type === "master" ? 0.3 : 0;
 
-    const score = titleScore * 3 + popularityScore * 0.5 + typeBonus;
+    // Strong signal: result title tokens exactly equal the query tokens (no extra words).
+    // This catches "Snoop Dogg" → artist card (title "Snoop Dogg", 2 tokens = query 2 tokens)
+    // over album "Snoop Dogg - Doggystyle" (3 tokens ≠ 2, so no bonus).
+    const exactMatchBonus = (titleTokens.size === queryTokens.length && overlap === queryTokens.length) ? 2.0 : 0;
+
+    const score = titleScore * 3 + popularityScore * 0.5 + typeBonus + exactMatchBonus;
     if (score > bestScore) { bestScore = score; best = result; }
   }
 
@@ -199,6 +213,30 @@ function pickBestResult(results, query) {
 
 // Main message listener — searches Discogs, detects result type, delegates to handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "LOOKUP_BY_ID") {
+    (async () => {
+      try {
+        const { token } = await chrome.storage.sync.get("token");
+        if (!token) throw new Error("No Discogs token set. Open the extension popup to add one.");
+        let type, data;
+        if (message.itemType === "artist") {
+          type = "artist";
+          data = await handleArtist(message.id, token);
+        } else if (message.itemType === "master") {
+          type = "release";
+          data = await handleMaster(message.id, token);
+        } else {
+          type = "release";
+          data = await handleRelease(message.id, token);
+        }
+        sendResponse({ ok: true, type, data });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === "LOOKUP") {
     (async () => {
       try {

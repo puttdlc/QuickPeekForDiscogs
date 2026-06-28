@@ -1,6 +1,8 @@
-// Active tooltip and loader element references
+// Active tooltip, loader, and navigation state
 let tooltip = null;
 let loader = null;
+let navStack = [];
+let currentTooltipData = null;
 
 // All injected styles for tooltip, loader, and layout variants
 const style = document.createElement("style");
@@ -71,6 +73,37 @@ style.textContent = `
     font-size: 13px;
   }
 
+  /* Back navigation header — hidden until user drills in */
+  .dqp-nav {
+    display: none;
+    align-items: center;
+    padding: 5px 8px;
+    border-bottom: 1px solid #333;
+    background: #222;
+  }
+  .dqp-back-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: sans-serif;
+  }
+  .dqp-back-btn:hover {
+    color: #f3a125;
+  }
+
+  /* Clickable items inside the tooltip */
+  .dqp-clickable {
+    cursor: pointer;
+    transition: color 0.12s;
+  }
+  .dqp-clickable:hover {
+    color: #f3a125 !important;
+  }
+
   /* Artist release list — stacked rows of thumbnail + title + year */
   .dqp-release-list {
     margin-top: 8px;
@@ -81,10 +114,18 @@ style.textContent = `
     gap: 8px;
     padding: 5px 0;
     border-top: 1px solid #333;
+    border-radius: 4px;
+    transition: background 0.12s;
   }
   .dqp-release-row:first-child {
     border-top: none;
     padding-top: 0;
+  }
+  .dqp-release-row.dqp-clickable:hover {
+    background: #252525;
+    padding-left: 4px;
+    padding-right: 4px;
+    margin: 0 -4px;
   }
   /* Small square album thumbnail inside a release row */
   .dqp-tooltip .dqp-release-thumb {
@@ -112,7 +153,12 @@ style.textContent = `
     display: flex;
     align-items: baseline;
     gap: 4px;
-    padding: 2px 0;
+    padding: 3px 2px;
+    border-radius: 3px;
+    transition: background 0.12s;
+  }
+  .dqp-track.dqp-clickable:hover {
+    background: #252525;
   }
   .dqp-track-pos {
     color: #888;
@@ -139,6 +185,23 @@ style.textContent = `
     font-size: 13px;
     color: #ccc;
     margin-top: 4px;
+  }
+
+  /* In-tooltip loading spinner while drill-down fetches */
+  .dqp-loading-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 80px;
+  }
+  .dqp-loading-inner::after {
+    content: "";
+    width: 20px;
+    height: 20px;
+    border: 2px solid #444;
+    border-top-color: #f3a125;
+    border-radius: 50%;
+    animation: dqp-spin 0.7s linear infinite;
   }
 
   /* Rolling circle loading indicator */
@@ -200,6 +263,8 @@ function removeTooltip() {
     tooltip.remove();
     tooltip = null;
   }
+  navStack = [];
+  currentTooltipData = null;
 }
 
 // Animated dismiss — shrinks and fades before removing from DOM
@@ -210,26 +275,25 @@ function fadeOut() {
   el.classList.add("fading");
   el.addEventListener("transitionend", () => el.remove(), { once: true });
   tooltip = null;
+  navStack = [];
+  currentTooltipData = null;
 }
 
 // Artist layout — profile photo, name header, scrollable release list
 function buildArtistLayout(data) {
   const frag = document.createDocumentFragment();
 
-  // Artist PFP image
   if (data.artistThumb) {
     const img = document.createElement("img");
     img.src = data.artistThumb;
     frag.appendChild(img);
   }
 
-  // Artist name header
   const header = document.createElement("div");
   header.className = "dqp-title";
   header.textContent = data.name;
   frag.appendChild(header);
 
-  // Genre tags under the name
   if (data.genres?.length) {
     const genres = document.createElement("div");
     genres.className = "dqp-year";
@@ -237,12 +301,17 @@ function buildArtistLayout(data) {
     frag.appendChild(genres);
   }
 
-  // Release rows — album art thumbnail + title + year
   const list = document.createElement("div");
   list.className = "dqp-release-list";
   data.releases.forEach(release => {
     const row = document.createElement("div");
-    row.className = "dqp-release-row";
+    row.className = "dqp-release-row" + (release.id ? " dqp-clickable" : "");
+    if (release.id) {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        performDrillDownById(release.id, release.type === "master" ? "master" : "release");
+      });
+    }
 
     if (release.coverThumb) {
       const img = document.createElement("img");
@@ -274,50 +343,79 @@ function buildArtistLayout(data) {
   return frag;
 }
 
-// Release layout — cover art, title, year + format, full tracklist
+// Release layout — cover art, title, year + format, artists, full tracklist
 function buildReleaseLayout(data) {
   const frag = document.createDocumentFragment();
 
-  // Album cover art
   if (data.coverThumb) {
     const img = document.createElement("img");
     img.src = data.coverThumb;
     frag.appendChild(img);
   }
 
-  // Release title
   const title = document.createElement("div");
   title.className = "dqp-title";
   title.textContent = data.title;
   frag.appendChild(title);
 
-  // Year and format on one line, e.g. "1973 · Vinyl"
   const meta = document.createElement("div");
   meta.className = "dqp-year";
   meta.textContent = [data.year, data.format].filter(Boolean).join(" · ");
   frag.appendChild(meta);
 
-  // Numbered tracklist
+  // Artist names — each individually clickable
+  if (data.artists?.length) {
+    const artistsEl = document.createElement("div");
+    artistsEl.className = "dqp-year";
+    artistsEl.style.marginTop = "4px";
+    data.artists.forEach((artist, i) => {
+      if (i > 0) artistsEl.appendChild(document.createTextNode(", "));
+      const span = document.createElement("span");
+      span.className = "dqp-clickable";
+      span.textContent = artist.name;
+      if (artist.id) {
+        span.addEventListener("click", (e) => {
+          e.stopPropagation();
+          performDrillDownById(artist.id, "artist");
+        });
+      }
+      artistsEl.appendChild(span);
+    });
+    frag.appendChild(artistsEl);
+  }
+
   if (data.tracklist?.length) {
     const tracklist = document.createElement("div");
     tracklist.className = "dqp-tracklist";
     data.tracklist.forEach(track => {
       const row = document.createElement("div");
-      row.className = "dqp-track";
+      row.className = "dqp-track dqp-clickable";
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        drillDown({
+          type: "track",
+          trackTitle: track.title,
+          albumTitle: data.title,
+          albumId: data.id,
+          albumType: data.itemType || "release",
+          artist: data.artists?.[0]?.name ?? null,
+          artistId: data.artists?.[0]?.id ?? null,
+          year: data.year,
+          coverThumb: data.coverThumb,
+          url: data.url
+        });
+      });
 
-      // Track position number
       const pos = document.createElement("span");
       pos.className = "dqp-track-pos";
       pos.textContent = track.position || "";
       row.appendChild(pos);
 
-      // Track name
       const name = document.createElement("span");
       name.className = "dqp-track-title";
       name.textContent = track.title;
       row.appendChild(name);
 
-      // Duration (optional — not all releases have it)
       if (track.duration) {
         const dur = document.createElement("span");
         dur.className = "dqp-track-dur";
@@ -333,38 +431,117 @@ function buildReleaseLayout(data) {
   return frag;
 }
 
-// Track layout — song title, parent album cover, album name, artist
+// Track layout — song title, parent album cover, album name (clickable), artist (clickable)
 function buildTrackLayout(data) {
   const frag = document.createDocumentFragment();
 
-  // Track name as the main heading
   const trackTitle = document.createElement("div");
   trackTitle.className = "dqp-title";
   trackTitle.textContent = data.trackTitle;
   frag.appendChild(trackTitle);
 
-  // Parent album cover art
   if (data.coverThumb) {
     const img = document.createElement("img");
     img.src = data.coverThumb;
     frag.appendChild(img);
   }
 
-  // Parent album title
-  const albumTitle = document.createElement("div");
-  albumTitle.className = "dqp-album-title";
-  albumTitle.textContent = data.albumTitle;
-  frag.appendChild(albumTitle);
+  if (data.albumTitle) {
+    const albumTitle = document.createElement("div");
+    albumTitle.className = "dqp-album-title dqp-clickable";
+    albumTitle.textContent = data.albumTitle;
+    albumTitle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // If we navigated here from an album, just go back rather than re-fetching
+      if (navStack.length > 0) {
+        goBack();
+      } else if (data.albumId) {
+        performDrillDownById(data.albumId, data.albumType || "master");
+      }
+    });
+    frag.appendChild(albumTitle);
+  }
 
-  // Artist name in muted text
   if (data.artist) {
     const artist = document.createElement("div");
-    artist.className = "dqp-year";
+    artist.className = "dqp-year dqp-clickable";
     artist.textContent = data.artist;
+    artist.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (data.artistId) {
+        performDrillDownById(data.artistId, "artist");
+      } else {
+        performDrillDownSearch(data.artist);
+      }
+    });
     frag.appendChild(artist);
   }
 
   return frag;
+}
+
+// Render content into the existing tooltip's scroll area; update nav visibility
+function renderContent(typeAndData) {
+  currentTooltipData = typeAndData;
+
+  const nav = tooltip.querySelector(".dqp-nav");
+  nav.style.display = navStack.length > 0 ? "flex" : "none";
+
+  const scrollInner = tooltip.querySelector(".dqp-scroll-inner");
+  scrollInner.innerHTML = "";
+
+  let content;
+  if (typeAndData.type === "artist") {
+    content = buildArtistLayout(typeAndData);
+  } else if (typeAndData.type === "track") {
+    content = buildTrackLayout(typeAndData);
+  } else {
+    content = buildReleaseLayout(typeAndData);
+  }
+  scrollInner.appendChild(content);
+
+  if (typeAndData.url) {
+    const link = document.createElement("a");
+    link.href = typeAndData.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "View on Discogs →";
+    scrollInner.appendChild(link);
+  }
+
+  scrollInner.scrollTop = 0;
+}
+
+// Push current view onto the stack and render new data
+function drillDown(newData) {
+  navStack.push(currentTooltipData);
+  renderContent(newData);
+}
+
+// Pop the stack and return to the previous view
+function goBack() {
+  if (!navStack.length) return;
+  const prev = navStack.pop();
+  renderContent(prev);
+}
+
+// Show a spinner inside the tooltip while fetching, then drill into the result
+function performDrillDownSearch(query) {
+  const scrollInner = tooltip.querySelector(".dqp-scroll-inner");
+  scrollInner.innerHTML = '<div class="dqp-loading-inner"></div>';
+  chrome.runtime.sendMessage({ type: "LOOKUP", query }, (response) => {
+    if (chrome.runtime.lastError || !response?.ok) return;
+    drillDown({ type: response.type, ...response.data });
+  });
+}
+
+function performDrillDownById(id, itemType) {
+  const scrollInner = tooltip.querySelector(".dqp-scroll-inner");
+  scrollInner.innerHTML = '<div class="dqp-loading-inner"></div>';
+  chrome.runtime.sendMessage({ type: "LOOKUP_BY_ID", id, itemType }, (response) => {
+    if (chrome.runtime.lastError || !response?.ok) return;
+    drillDown({ type: response.type, ...response.data });
+  });
 }
 
 // Build and position the tooltip, branching on result type
@@ -374,31 +551,23 @@ function showTooltip(data, x, y) {
   tooltip = document.createElement("div");
   tooltip.className = "dqp-tooltip";
 
+  // Back navigation header (hidden until the user drills in)
+  const nav = document.createElement("div");
+  nav.className = "dqp-nav";
+  const backBtn = document.createElement("button");
+  backBtn.className = "dqp-back-btn";
+  backBtn.textContent = "← Back";
+  backBtn.addEventListener("click", (e) => { e.stopPropagation(); goBack(); });
+  nav.appendChild(backBtn);
+  tooltip.appendChild(nav);
+
   const scrollInner = document.createElement("div");
   scrollInner.className = "dqp-scroll-inner";
-
-  // Pick the right layout based on what Discogs identified
-  let content;
-  if (data.type === "artist") {
-    content = buildArtistLayout(data);
-  } else if (data.type === "track") {
-    content = buildTrackLayout(data);
-  } else {
-    content = buildReleaseLayout(data);
-  }
-  scrollInner.appendChild(content);
-
-  // "View on Discogs" link at the bottom of every layout
-  const link = document.createElement("a");
-  link.href = data.url;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = "View on Discogs →";
-  scrollInner.appendChild(link);
-
   tooltip.appendChild(scrollInner);
 
   document.body.appendChild(tooltip);
+
+  renderContent(data);
 
   // Viewport boundary check — flip to left or up if it would overflow
   const rect = tooltip.getBoundingClientRect();
@@ -434,6 +603,9 @@ document.addEventListener("contextmenu", (e) => {
 
 // Instant lookup on text selection (if the setting is enabled)
 document.addEventListener("mouseup", (e) => {
+  // Never treat clicks inside the tooltip as "lost selection" — those are navigation actions
+  if (tooltip && tooltip.contains(e.target)) return;
+
   const selectedText = window.getSelection().toString().trim();
   if (!selectedText) {
     removeTooltip();
