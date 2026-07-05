@@ -52,9 +52,12 @@
  * well-known release beats a niche one that happens to share a few words —
  * it's capped (POPULARITY_CAP) so a viral self-titled album (e.g. "The
  * Beatles") can never outscore the artist entry itself. Stop words are
- * stripped before comparison to reduce false matches. The weight/bonus
- * constants live just above rankResults() for quick tuning.
+ * stripped before comparison to reduce false matches. The default weight/bonus
+ * constants live in weights.js, and can be overridden per-user from the
+ * popup's Advanced Settings screen (stored in chrome.storage.sync).
  */
+
+importScripts("weights.js");
 
 // Right-click context menu registration
 chrome.runtime.onInstalled.addListener(() => {
@@ -195,17 +198,13 @@ function tokenize(str) {
     .filter(w => w.length > 1 && !STOP_WORDS.has(w));
 }
 
-// Scoring weights — tune independently without touching the scoring logic below
-const TITLE_OVERLAP_WEIGHT = 3;      // multiplier on (overlap / queryWordCount) — primary signal
-const POPULARITY_WEIGHT = 0.5;       // multiplier on log10(have + want + 1) — tie-breaker, not a deciding factor
-const POPULARITY_CAP = 3;            // ceiling on log10(have + want + 1) before weighting, so a viral
-                                      // self-titled album's community stats can never outweigh type/exact bonuses
-const ARTIST_TYPE_BONUS = 4.0;       // flat bonus so artists beat self-titled albums even at max popularity
-const MASTER_TYPE_BONUS = 0.3;       // flat bonus favoring canonical masters over single pressings
-const EXACT_MATCH_BONUS = 2.0;       // flat bonus when title tokens exactly equal query tokens
+// Scoring weights (TITLE_OVERLAP_WEIGHT, POPULARITY_WEIGHT, POPULARITY_CAP,
+// ARTIST_TYPE_BONUS, MASTER_TYPE_BONUS, EXACT_MATCH_BONUS) live in weights.js
+// as WEIGHT_DEFAULTS, and can be overridden per-user via the popup's
+// Advanced Settings screen — resolved fresh from storage on each lookup.
 
 // Score and sort all results against the raw query; highest score first.
-function rankResults(results, query) {
+function rankResults(results, query, weights) {
   const queryTokens = tokenize(query);
   if (!queryTokens.length) return [...results];
 
@@ -215,17 +214,17 @@ function rankResults(results, query) {
     const titleScore = overlap / queryTokens.length;
 
     const popularity = (result.community?.have || 0) + (result.community?.want || 0);
-    const popularityScore = Math.min(Math.log10(popularity + 1), POPULARITY_CAP);
+    const popularityScore = Math.min(Math.log10(popularity + 1), weights.POPULARITY_CAP);
 
     // Artists get a large bonus so they always beat self-titled albums with the same query
-    const typeBonus = result.type === "artist" ? ARTIST_TYPE_BONUS : result.type === "master" ? MASTER_TYPE_BONUS : 0;
+    const typeBonus = result.type === "artist" ? weights.ARTIST_TYPE_BONUS : result.type === "master" ? weights.MASTER_TYPE_BONUS : 0;
 
     // Strong signal: result title tokens exactly equal the query tokens (no extra words).
     // This catches "Snoop Dogg" → artist card (title "Snoop Dogg", 2 tokens = query 2 tokens)
     // over album "Snoop Dogg - Doggystyle" (3 tokens ≠ 2, so no bonus).
-    const exactMatchBonus = (titleTokens.size === queryTokens.length && overlap === queryTokens.length) ? EXACT_MATCH_BONUS : 0;
+    const exactMatchBonus = (titleTokens.size === queryTokens.length && overlap === queryTokens.length) ? weights.EXACT_MATCH_BONUS : 0;
 
-    const score = titleScore * TITLE_OVERLAP_WEIGHT + popularityScore * POPULARITY_WEIGHT + typeBonus + exactMatchBonus;
+    const score = titleScore * weights.TITLE_OVERLAP_WEIGHT + popularityScore * weights.POPULARITY_WEIGHT + typeBonus + exactMatchBonus;
     return { result, score };
   })
   .sort((a, b) => b.score - a.score)
@@ -272,8 +271,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (!searchData.results?.length) throw new Error("No results found for: " + message.query);
 
+        const storedWeights = await chrome.storage.sync.get(Object.keys(WEIGHT_DEFAULTS));
+        const weights = resolveWeights(storedWeights);
+
         // Rank all 25 results; [0] is the best match, [1-5] become "Or did you mean?" alternatives
-        const ranked = rankResults(searchData.results, message.query);
+        const ranked = rankResults(searchData.results, message.query, weights);
         const firstResult = ranked[0];
         const alternatives = ranked.slice(1, 6).map(r => ({
           id: r.id,

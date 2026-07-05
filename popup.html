@@ -14,13 +14,18 @@
         background: #1a1a1a;
         color: #f0f0f0;
         font-family: Arial, sans-serif;
-        animation: popIn 0.27s ease-out;
       }
 
       @keyframes popIn {
         0%  { opacity: 0; transform: scale(0.9); }
         70% { transform: scale(1.02); }
         100%{ opacity: 1; transform: scale(1); }
+      }
+
+      /* Shared entrance animation for whichever screen (main or advanced)
+         is currently displayed — replays each time display toggles to block */
+      .screen {
+        animation: popIn 0.27s ease-out;
       }
 
       .header {
@@ -283,52 +288,203 @@
       .switch input:checked + .slider::before {
         transform: translateX(16px);
       }
+
+      .secondary-btn {
+        width: 100%;
+        padding: 10px;
+        background: #2e2e2e;
+        color: #f0f0f0;
+        border: 1px solid #444;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: bold;
+        font-family: Arial, sans-serif;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: border-color 0.2s, color 0.2s;
+        animation: fadeUp 0.27s ease-out 0.22s both;
+      }
+
+      .secondary-btn:hover {
+        border-color: #f3a125;
+        color: #f3a125;
+      }
+
+      .secondary-btn svg {
+        display: block;
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+      }
+
+      .back-btn {
+        background: none;
+        border: none;
+        color: #888;
+        font-size: 12px;
+        font-family: Arial, sans-serif;
+        cursor: pointer;
+        padding: 0;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .back-btn:hover {
+        color: #f3a125;
+      }
+
+      .weight-row {
+        padding: 12px 0;
+        border-bottom: 1px solid #2a2a2a;
+        animation: fadeUp 0.27s ease-out both;
+      }
+
+      .weight-row:last-child {
+        border-bottom: none;
+      }
+
+      .weight-row-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .weight-label {
+        font-size: 13px;
+        font-weight: bold;
+      }
+
+      .weight-desc {
+        font-size: 11px;
+        color: #666;
+        margin-top: 2px;
+      }
+
+      .weight-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .weight-number {
+        width: 52px;
+        padding: 5px 6px;
+        background: #2e2e2e;
+        border: 1px solid #444;
+        border-radius: 6px;
+        color: #f0f0f0;
+        font-size: 12px;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        outline: none;
+      }
+
+      .weight-number:focus {
+        border-color: #f3a125;
+      }
+
+      .rewind-btn {
+        background: none;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+      }
+
+      .rewind-btn:hover {
+        color: #f3a125;
+      }
+
+      .rewind-btn svg {
+        display: block;
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+      }
+
+      .weight-slider {
+        width: 100%;
+        accent-color: #f3a125;
+      }
+
+      #advancedScreen {
+        display: none;
+      }
     </style>
   </head>
   <body>
-    <div class="header">
-      <div class="app-title">Selection Lookup for Discogs</div>
-      <div class="app-subtitle">Settings</div>
-    </div>
-
-    <div class="content">
-      <div class="label">Personal Access Token</div>
-
-      <div class="input-wrapper">
-        <input type="password" id="tokenInput" class="token-input" placeholder="Paste your token here..." />
-        <span class="lock-icon" id="lockIcon"></span>
-        <button class="toggle-btn" id="toggleVisibility" title="Show/hide token">
-          <span id="eyeIcon"></span>
-        </button>
+    <div id="mainScreen" class="screen">
+      <div class="header">
+        <div class="app-title">Selection Lookup for Discogs</div>
+        <div class="app-subtitle">Settings</div>
       </div>
 
-      <div class="divider"></div>
+      <div class="content">
+        <div class="label">Personal Access Token</div>
 
-      <div class="setting-row">
-        <div>
-          <div class="setting-label">Instant Select Lookup</div>
-          <div class="setting-desc">Auto-query any highlighted text</div>
+        <div class="input-wrapper">
+          <input type="password" id="tokenInput" class="token-input" placeholder="Paste your token here..." />
+          <span class="lock-icon" id="lockIcon"></span>
+          <button class="toggle-btn" id="toggleVisibility" title="Show/hide token">
+            <span id="eyeIcon"></span>
+          </button>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="instantToggle" />
-          <span class="slider"></span>
-        </label>
+
+        <div class="divider"></div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Instant Select Lookup</div>
+            <div class="setting-desc">Auto-query any highlighted text</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="instantToggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="divider"></div>
+
+        <button id="advancedBtn" class="secondary-btn">
+          Advanced Settings
+          <span id="slidersIcon"></span>
+        </button>
+
+        <div class="divider" style="animation-delay: 0.24s"></div>
+
+        <button id="saveBtn">Save Token</button>
+        <div id="status"></div>
       </div>
 
-      <div class="divider" style="animation-delay: 0.35s"></div>
+      <div class="footer">
+        <a href="https://www.discogs.com/settings/developers" target="_blank">Get API Token</a>
+        <span style="color: #555">·</span>
+        <a href="https://www.discogs.com" target="_blank">Discogs</a>
+      </div>
 
-      <button id="saveBtn">Save Token</button>
-      <div id="status"></div>
+      <div class="disclaimer">Not officially affiliated with Discogs</div>
     </div>
 
-    <div class="footer">
-      <a href="https://www.discogs.com/settings/developers" target="_blank">Get API Token</a>
-      <span style="color: #555">·</span>
-      <a href="https://www.discogs.com" target="_blank">Discogs</a>
+    <div id="advancedScreen" class="screen">
+      <div class="header">
+        <button id="backBtn" class="back-btn">&larr; Back</button>
+        <div class="app-title">Advanced Settings</div>
+        <div class="app-subtitle">Tune result-scoring weights</div>
+      </div>
+
+      <div class="content" id="weightsList"></div>
     </div>
 
-    <div class="disclaimer">Not officially affiliated with Discogs</div>
-
+    <script src="weights.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
