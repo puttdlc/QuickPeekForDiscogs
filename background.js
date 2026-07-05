@@ -43,15 +43,17 @@
  * RESULT SCORING (rankResults)
  * ───────────────────────────────
  * score = (titleOverlap / queryWordCount) × TITLE_OVERLAP_WEIGHT
- *       + log10(community.have + community.want + 1) × POPULARITY_WEIGHT
+ *       + min(log10(community.have + community.want + 1), POPULARITY_CAP) × POPULARITY_WEIGHT
  *       + ARTIST_TYPE_BONUS if type === "artist"
  *       + MASTER_TYPE_BONUS if type === "master"
  *       + EXACT_MATCH_BONUS if title tokens exactly equal query tokens
  *
- * Title overlap is the primary signal; popularity breaks ties so a
- * well-known release beats a niche one that happens to share a few words.
- * Stop words are stripped before comparison to reduce false matches.
- * The weight/bonus constants live just above rankResults() for quick tuning.
+ * Title overlap is the primary signal; popularity only breaks ties so a
+ * well-known release beats a niche one that happens to share a few words —
+ * it's capped (POPULARITY_CAP) so a viral self-titled album (e.g. "The
+ * Beatles") can never outscore the artist entry itself. Stop words are
+ * stripped before comparison to reduce false matches. The weight/bonus
+ * constants live just above rankResults() for quick tuning.
  */
 
 // Right-click context menu registration
@@ -194,9 +196,11 @@ function tokenize(str) {
 }
 
 // Scoring weights — tune independently without touching the scoring logic below
-const TITLE_OVERLAP_WEIGHT = 3;      // multiplier on (overlap / queryWordCount)
-const POPULARITY_WEIGHT = 1.5;       // multiplier on log10(have + want + 1)
-const ARTIST_TYPE_BONUS = 4.0;       // flat bonus so artists beat self-titled albums
+const TITLE_OVERLAP_WEIGHT = 3;      // multiplier on (overlap / queryWordCount) — primary signal
+const POPULARITY_WEIGHT = 0.5;       // multiplier on log10(have + want + 1) — tie-breaker, not a deciding factor
+const POPULARITY_CAP = 3;            // ceiling on log10(have + want + 1) before weighting, so a viral
+                                      // self-titled album's community stats can never outweigh type/exact bonuses
+const ARTIST_TYPE_BONUS = 4.0;       // flat bonus so artists beat self-titled albums even at max popularity
 const MASTER_TYPE_BONUS = 0.3;       // flat bonus favoring canonical masters over single pressings
 const EXACT_MATCH_BONUS = 2.0;       // flat bonus when title tokens exactly equal query tokens
 
@@ -211,7 +215,7 @@ function rankResults(results, query) {
     const titleScore = overlap / queryTokens.length;
 
     const popularity = (result.community?.have || 0) + (result.community?.want || 0);
-    const popularityScore = Math.log10(popularity + 1);
+    const popularityScore = Math.min(Math.log10(popularity + 1), POPULARITY_CAP);
 
     // Artists get a large bonus so they always beat self-titled albums with the same query
     const typeBonus = result.type === "artist" ? ARTIST_TYPE_BONUS : result.type === "master" ? MASTER_TYPE_BONUS : 0;
