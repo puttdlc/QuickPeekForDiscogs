@@ -40,15 +40,18 @@
  *                 Returns the individual track title alongside its parent
  *                 album's cover, title, and artist.
  *
- * RESULT SCORING (pickBestResult)
+ * RESULT SCORING (rankResults)
  * ───────────────────────────────
- * score = (titleOverlap / queryWordCount) × 3
- *       + log10(community.have + community.want + 1) × 0.5
- *       + 0.3 if type === "master"
+ * score = (titleOverlap / queryWordCount) × TITLE_OVERLAP_WEIGHT
+ *       + log10(community.have + community.want + 1) × POPULARITY_WEIGHT
+ *       + ARTIST_TYPE_BONUS if type === "artist"
+ *       + MASTER_TYPE_BONUS if type === "master"
+ *       + EXACT_MATCH_BONUS if title tokens exactly equal query tokens
  *
  * Title overlap is the primary signal; popularity breaks ties so a
  * well-known release beats a niche one that happens to share a few words.
  * Stop words are stripped before comparison to reduce false matches.
+ * The weight/bonus constants live just above rankResults() for quick tuning.
  */
 
 // Right-click context menu registration
@@ -190,6 +193,13 @@ function tokenize(str) {
     .filter(w => w.length > 1 && !STOP_WORDS.has(w));
 }
 
+// Scoring weights — tune independently without touching the scoring logic below
+const TITLE_OVERLAP_WEIGHT = 3;      // multiplier on (overlap / queryWordCount)
+const POPULARITY_WEIGHT = 1.5;       // multiplier on log10(have + want + 1)
+const ARTIST_TYPE_BONUS = 4.0;       // flat bonus so artists beat self-titled albums
+const MASTER_TYPE_BONUS = 0.3;       // flat bonus favoring canonical masters over single pressings
+const EXACT_MATCH_BONUS = 2.0;       // flat bonus when title tokens exactly equal query tokens
+
 // Score and sort all results against the raw query; highest score first.
 function rankResults(results, query) {
   const queryTokens = tokenize(query);
@@ -204,14 +214,14 @@ function rankResults(results, query) {
     const popularityScore = Math.log10(popularity + 1);
 
     // Artists get a large bonus so they always beat self-titled albums with the same query
-    const typeBonus = result.type === "artist" ? 4.0 : result.type === "master" ? 0.3 : 0;
+    const typeBonus = result.type === "artist" ? ARTIST_TYPE_BONUS : result.type === "master" ? MASTER_TYPE_BONUS : 0;
 
     // Strong signal: result title tokens exactly equal the query tokens (no extra words).
     // This catches "Snoop Dogg" → artist card (title "Snoop Dogg", 2 tokens = query 2 tokens)
     // over album "Snoop Dogg - Doggystyle" (3 tokens ≠ 2, so no bonus).
-    const exactMatchBonus = (titleTokens.size === queryTokens.length && overlap === queryTokens.length) ? 2.0 : 0;
+    const exactMatchBonus = (titleTokens.size === queryTokens.length && overlap === queryTokens.length) ? EXACT_MATCH_BONUS : 0;
 
-    const score = titleScore * 3 + popularityScore * 0.5 + typeBonus + exactMatchBonus;
+    const score = titleScore * TITLE_OVERLAP_WEIGHT + popularityScore * POPULARITY_WEIGHT + typeBonus + exactMatchBonus;
     return { result, score };
   })
   .sort((a, b) => b.score - a.score)
