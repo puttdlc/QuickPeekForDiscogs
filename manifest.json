@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Discogs Quick-Peek",
-  "version": "1.2.3",
+  "description": "Get an instant Discogs preview on browser. It's a way to discover music while you're reading, anywhere.",
+  "version": "1.5.0",
   "permissions": ["storage", "contextMenus"],
   "host_permissions": ["https://api.discogs.com/*"],
   "background": {
@@ -10,6 +11,10 @@
   "content_scripts": [{
     "matches": ["<all_urls>"],
     "js": ["content.js"]
+  }],
+  "web_accessible_resources": [{
+    "resources": ["svg/youtube.svg"],
+    "matches": ["<all_urls>"]
   }],
   "action": {
     "default_popup": "popup.html",

@@ -37,7 +37,7 @@ Example Usage Patterns:
 |---|---|
 | An artist name (`The Beatles`) | Photo, genre tags, and their 5 most recent releases |
 | An album/release title (`Head Hunters`) | Cover art, year, format and the full tracklist |
-| A song title (`The Great Gig in the Sky`)| The track name plus its parent album's cover, title, and artist |
+| A song title (`The Great Gig in the Sky`)| The track name plus its parent album's cover, title, and artist. Though, it's a hit or miss. Albums show more frequently in discogs search results than a particular track.|
 | Anything else | Its single best-guess match, with five ranked alternatives underneath in case the guess is wrong |
 
 *NOTE: These are idealized results, so in future updates, it might stop reflecting these!*

@@ -60,6 +60,37 @@ style.textContent = `
   .dqp-tooltip .dqp-title {
     font-weight: bold;
   }
+  /* Row pairing a title with its YouTube button */
+  .dqp-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dqp-title-row .dqp-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* YouTube button — overrides the generic block/margin styling every other <a> gets below */
+  .dqp-tooltip a.dqp-youtube-btn {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0;
+    flex-shrink: 0;
+    opacity: 0.85;
+    transition: opacity 0.12s, transform 0.12s;
+  }
+  .dqp-tooltip a.dqp-youtube-btn:hover {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  .dqp-tooltip .dqp-youtube-btn img {
+    width: 20px;
+    height: 14px;
+    display: block;
+    margin-bottom: 0;
+  }
   /* Muted subtitle (year, format, artist name) */
   .dqp-tooltip .dqp-year {
     color: #aaa;
@@ -238,6 +269,50 @@ style.textContent = `
     margin-top: 1px;
   }
 
+  /* Collapsible metadata sections (Master / Artists / Companies / Credits / Notes) */
+  .dqp-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #2a2a2a;
+  }
+  .dqp-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 0;
+  }
+  .dqp-section-chevron {
+    display: inline-block;
+    font-size: 9px;
+    width: 8px;
+    transition: transform 0.15s;
+  }
+  .dqp-section.dqp-expanded .dqp-section-chevron {
+    transform: rotate(90deg);
+  }
+  .dqp-section-body {
+    display: none;
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .dqp-section.dqp-expanded .dqp-section-body {
+    display: block;
+  }
+  .dqp-info-row {
+    padding: 3px 0;
+    color: #ccc;
+  }
+  .dqp-notes-text {
+    color: #bbb;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+
   /* Warning message shown when the token is missing/invalid or a lookup fails */
   .dqp-error-message {
     color: #f3a125;
@@ -403,6 +478,190 @@ function buildArtistLayout(data) {
   return frag;
 }
 
+// Small YouTube link button, placed beside a title when a video is available.
+// Loads the icon from svg/youtube.svg (declared web-accessible in manifest.json)
+// since this content script runs in the host page's origin, not the extension's.
+function buildYoutubeButton(url) {
+  const btn = document.createElement("a");
+  btn.href = url;
+  btn.target = "_blank";
+  btn.rel = "noopener noreferrer";
+  btn.className = "dqp-youtube-btn";
+  btn.title = "Watch on YouTube";
+
+  const icon = document.createElement("img");
+  icon.src = chrome.runtime.getURL("svg/youtube.svg");
+  icon.alt = "YouTube";
+  btn.appendChild(icon);
+
+  btn.addEventListener("click", (e) => e.stopPropagation());
+  return btn;
+}
+
+// Wraps a title element with an optional YouTube button to its right
+function buildTitleRow(titleEl, youtubeUrl) {
+  const row = document.createElement("div");
+  row.className = "dqp-title-row";
+  row.appendChild(titleEl);
+  if (youtubeUrl) {
+    row.appendChild(buildYoutubeButton(youtubeUrl));
+  }
+  return row;
+}
+
+// Strip Discogs' bracket markup (artist/label refs, bold/italic/url tags) from free-text notes
+function cleanDiscogsMarkup(text) {
+  return text
+    .replace(/\[(?:a|l|r|m|v)=([^\]]*)\]/gi, "$1")
+    .replace(/\[\/?(?:b|i|u)\]/gi, "")
+    .replace(/\[url(?:=[^\]]*)?\]/gi, "")
+    .replace(/\[\/url\]/gi, "")
+    .trim();
+}
+
+// Collapsed-by-default section — header toggles the body open/closed on click
+function buildSection(title, contentEl) {
+  const section = document.createElement("div");
+  section.className = "dqp-section";
+
+  const header = document.createElement("div");
+  header.className = "dqp-section-header dqp-clickable";
+
+  const chevron = document.createElement("span");
+  chevron.className = "dqp-section-chevron";
+  chevron.textContent = "▸";
+  header.appendChild(chevron);
+
+  const label = document.createElement("span");
+  label.textContent = title;
+  header.appendChild(label);
+
+  header.addEventListener("click", (e) => {
+    e.stopPropagation();
+    section.classList.toggle("dqp-expanded");
+  });
+
+  const body = document.createElement("div");
+  body.className = "dqp-section-body";
+  body.appendChild(contentEl);
+
+  section.appendChild(header);
+  section.appendChild(body);
+  return section;
+}
+
+// Single clickable row that jumps to the master release
+function buildMasterSectionContent(masterId) {
+  const row = document.createElement("div");
+  row.className = "dqp-info-row dqp-clickable";
+  row.textContent = "View Master Release →";
+  row.addEventListener("click", (e) => {
+    e.stopPropagation();
+    performDrillDownById(masterId, "master");
+  });
+  return row;
+}
+
+// One row per artist, each clickable to drill into that artist's page
+function buildArtistsSectionContent(artists) {
+  const frag = document.createDocumentFragment();
+  artists.forEach(artist => {
+    const row = document.createElement("div");
+    row.className = "dqp-info-row" + (artist.id ? " dqp-clickable" : "");
+    row.textContent = artist.name;
+    if (artist.id) {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        performDrillDownById(artist.id, "artist");
+      });
+    }
+    frag.appendChild(row);
+  });
+  return frag;
+}
+
+// One row per company/label credit (pressing plant, distributor, copyright holder, etc.)
+function buildCompaniesSectionContent(companies) {
+  const frag = document.createDocumentFragment();
+  companies.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "dqp-info-row";
+    row.textContent = c.entityType ? `${c.name} — ${c.entityType}` : c.name;
+    frag.appendChild(row);
+  });
+  return frag;
+}
+
+// A single identifier row — description disambiguates rows that would otherwise
+// look identical, e.g. "Matrix / Runout: PB 41447 A2 (A side runout, variant 1)"
+function buildIdentifierRow(entry) {
+  const row = document.createElement("div");
+  row.className = "dqp-info-row";
+  const label = entry.type ? `${entry.type}: ${entry.value}` : entry.value;
+  row.textContent = entry.description ? `${label} (${entry.description})` : label;
+  return row;
+}
+
+// One row per barcode variant (a release can carry more than one, e.g. per-region pressings)
+function buildBarcodeSectionContent(barcodes) {
+  const frag = document.createDocumentFragment();
+  barcodes.forEach(b => frag.appendChild(buildIdentifierRow(b)));
+  return frag;
+}
+
+// One row per non-barcode identifier (matrix/runout, label code, rights society, price code, etc.)
+function buildIdentifiersSectionContent(identifiers) {
+  const frag = document.createDocumentFragment();
+  identifiers.forEach(i => frag.appendChild(buildIdentifierRow(i)));
+  return frag;
+}
+
+// One row per non-primary credit (producer, engineer, artwork, etc.), clickable where an artist ID exists
+function buildCreditsSectionContent(credits) {
+  const frag = document.createDocumentFragment();
+  credits.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "dqp-info-row" + (c.id ? " dqp-clickable" : "");
+    row.textContent = c.role ? `${c.name} — ${c.role}` : c.name;
+    if (c.id) {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        performDrillDownById(c.id, "artist");
+      });
+    }
+    frag.appendChild(row);
+  });
+  return frag;
+}
+
+// Free-text release notes
+function buildNotesSectionContent(notes) {
+  const div = document.createElement("div");
+  div.className = "dqp-notes-text";
+  div.textContent = cleanDiscogsMarkup(notes);
+  return div;
+}
+
+// Marketplace/collector stats — for sale count, lowest price, have/want, community rating
+function buildStatisticsSectionContent(stats) {
+  const frag = document.createDocumentFragment();
+  const rows = [];
+  if (stats.lowestPrice != null) rows.push(`Lowest Price: $${stats.lowestPrice.toFixed(2)}`);
+  if (stats.numForSale != null) rows.push(`For Sale: ${stats.numForSale}`);
+  if (stats.have != null) rows.push(`Have: ${stats.have}`);
+  if (stats.want != null) rows.push(`Want: ${stats.want}`);
+  if (stats.ratingAverage != null && stats.ratingCount) {
+    rows.push(`Rating: ${stats.ratingAverage.toFixed(2)} / 5 (${stats.ratingCount} ratings)`);
+  }
+  rows.forEach(text => {
+    const row = document.createElement("div");
+    row.className = "dqp-info-row";
+    row.textContent = text;
+    frag.appendChild(row);
+  });
+  return frag;
+}
+
 // Release layout — cover art, title, year + format, artists, full tracklist
 function buildReleaseLayout(data) {
   const frag = document.createDocumentFragment();
@@ -416,33 +675,12 @@ function buildReleaseLayout(data) {
   const title = document.createElement("div");
   title.className = "dqp-title";
   title.textContent = data.title;
-  frag.appendChild(title);
+  frag.appendChild(buildTitleRow(title, data.youtubeUrl));
 
   const meta = document.createElement("div");
   meta.className = "dqp-year";
   meta.textContent = [data.year, data.format].filter(Boolean).join(" · ");
   frag.appendChild(meta);
-
-  // Artist names — each individually clickable
-  if (data.artists?.length) {
-    const artistsEl = document.createElement("div");
-    artistsEl.className = "dqp-year";
-    artistsEl.style.marginTop = "4px";
-    data.artists.forEach((artist, i) => {
-      if (i > 0) artistsEl.appendChild(document.createTextNode(", "));
-      const span = document.createElement("span");
-      span.className = "dqp-clickable";
-      span.textContent = artist.name;
-      if (artist.id) {
-        span.addEventListener("click", (e) => {
-          e.stopPropagation();
-          performDrillDownById(artist.id, "artist");
-        });
-      }
-      artistsEl.appendChild(span);
-    });
-    frag.appendChild(artistsEl);
-  }
 
   if (data.tracklist?.length) {
     const tracklist = document.createElement("div");
@@ -462,6 +700,7 @@ function buildReleaseLayout(data) {
           artistId: data.artists?.[0]?.id ?? null,
           year: data.year,
           coverThumb: data.coverThumb,
+          youtubeUrl: data.youtubeUrl,
           url: data.url
         });
       });
@@ -488,6 +727,32 @@ function buildReleaseLayout(data) {
     frag.appendChild(tracklist);
   }
 
+  // Expandable metadata sections — collapsed by default, each opens on click
+  if (data.masterId) {
+    frag.appendChild(buildSection("Master", buildMasterSectionContent(data.masterId)));
+  }
+  if (data.artists?.length) {
+    frag.appendChild(buildSection("Artists", buildArtistsSectionContent(data.artists)));
+  }
+  if (data.companies?.length) {
+    frag.appendChild(buildSection("Companies", buildCompaniesSectionContent(data.companies)));
+  }
+  if (data.credits?.length) {
+    frag.appendChild(buildSection("Credits", buildCreditsSectionContent(data.credits)));
+  }
+  if (data.barcodes?.length) {
+    frag.appendChild(buildSection("Barcode", buildBarcodeSectionContent(data.barcodes)));
+  }
+  if (data.identifiers?.length) {
+    frag.appendChild(buildSection("Identifiers", buildIdentifiersSectionContent(data.identifiers)));
+  }
+  if (data.notes) {
+    frag.appendChild(buildSection("Notes", buildNotesSectionContent(data.notes)));
+  }
+  if (data.statistics) {
+    frag.appendChild(buildSection("Statistics", buildStatisticsSectionContent(data.statistics)));
+  }
+
   return frag;
 }
 
@@ -498,7 +763,7 @@ function buildTrackLayout(data) {
   const trackTitle = document.createElement("div");
   trackTitle.className = "dqp-title";
   trackTitle.textContent = data.trackTitle;
-  frag.appendChild(trackTitle);
+  frag.appendChild(buildTitleRow(trackTitle, data.youtubeUrl));
 
   if (data.coverThumb) {
     const img = document.createElement("img");

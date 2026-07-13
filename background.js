@@ -125,11 +125,74 @@ async function handleArtist(id, token) {
   };
 }
 
+// Companies/credits/notes/identifiers only exist on the release resource, not the master —
+// shared by handleMaster (via main_release) and handleRelease
+function extractExtras(data) {
+  // description disambiguates otherwise-identical rows, e.g. two "Matrix / Runout"
+  // entries labeled "A side runout" vs "B side runout", or a "Price Code" per region
+  const allIdentifiers = (data.identifiers || []).map(i => ({
+    type: i.type,
+    value: i.value,
+    description: i.description || null
+  }));
+
+  return {
+    companies: (data.companies || []).map(c => ({ name: c.name, entityType: c.entity_type_name })),
+    credits: (data.extraartists || []).map(a => ({ id: a.id, name: a.name, role: a.role })),
+    notes: data.notes || null,
+    barcodes: allIdentifiers.filter(i => i.type?.toLowerCase().includes("barcode")),
+    identifiers: allIdentifiers.filter(i => !i.type?.toLowerCase().includes("barcode"))
+  };
+}
+
+// Marketplace/collector stats — num_for_sale and lowest_price live on both master and
+// release resources, but have/want/rating (the "community" object) only exist on releases.
+// Returns null if nothing came back at all (e.g. the community fetch failed for a master).
+function buildStatistics({ numForSale, lowestPrice, community }) {
+  const stats = {
+    numForSale: numForSale ?? null,
+    lowestPrice: lowestPrice ?? null,
+    have: community?.have ?? null,
+    want: community?.want ?? null,
+    ratingAverage: community?.rating?.average ?? null,
+    ratingCount: community?.rating?.count ?? null
+  };
+  return Object.values(stats).some(v => v !== null) ? stats : null;
+}
+
+// YouTube link from a resource's "videos" list — masters and releases both carry this.
+// When trackTitle is given (track drill-down), prefer a video whose title mentions that
+// track over the album's first video.
+function extractYoutubeUrl(videos, trackTitle) {
+  const ytVideos = (videos || []).filter(v => v.uri && /youtube\.com|youtu\.be/i.test(v.uri));
+  if (trackTitle) {
+    const match = ytVideos.find(v => v.title?.toLowerCase().includes(trackTitle.toLowerCase()));
+    if (match) return match.uri;
+  }
+  return ytVideos[0]?.uri ?? null;
+}
+
 // Master handler — same shape as release but hits /masters/{id}
 async function handleMaster(id, token) {
   const res = await fetch(`https://api.discogs.com/masters/${id}?token=${token}`);
   checkResponse(res);
   const data = await res.json();
+
+  // Companies/extraartists/notes/community live on the release level — pull them from
+  // the master's primary pressing so those sections have data
+  let extras = { companies: [], credits: [], notes: null, barcodes: [], identifiers: [] };
+  let community = null;
+  let mainVideos = [];
+  if (data.main_release_url) {
+    try {
+      const mainRes = await fetch(`${data.main_release_url}?token=${token}`);
+      const mainData = await mainRes.json();
+      extras = extractExtras(mainData);
+      community = mainData.community;
+      mainVideos = mainData.videos || [];
+    } catch (_) {}
+  }
+
   return {
     id: data.id,
     itemType: "master",
@@ -143,6 +206,13 @@ async function handleMaster(id, token) {
       title: t.title,
       duration: t.duration
     })),
+    ...extras,
+    masterId: null, // already viewing the master itself
+    // The master's own videos list is usually richest, but fall back to its
+    // main pressing's videos (already fetched above) if it comes up empty
+    youtubeUrl: extractYoutubeUrl(data.videos) ?? extractYoutubeUrl(mainVideos),
+    // num_for_sale/lowest_price come from the master itself (aggregated across all pressings)
+    statistics: buildStatistics({ numForSale: data.num_for_sale, lowestPrice: data.lowest_price, community }),
     url: data.uri ?? `https://www.discogs.com/master/${id}`
   };
 }
@@ -152,6 +222,19 @@ async function handleRelease(id, token) {
   const res = await fetch(`https://api.discogs.com/releases/${id}?token=${token}`);
   checkResponse(res);
   const data = await res.json();
+
+  // Individual pressings often carry no video credits of their own even when the
+  // master they belong to does (videos tend to get attached to whichever version
+  // the community actively curates) — fall back to the master's list before giving up
+  let youtubeUrl = extractYoutubeUrl(data.videos);
+  if (!youtubeUrl && data.master_id) {
+    try {
+      const masterRes = await fetch(`https://api.discogs.com/masters/${data.master_id}?token=${token}`);
+      const masterData = await masterRes.json();
+      youtubeUrl = extractYoutubeUrl(masterData.videos);
+    } catch (_) {}
+  }
+
   return {
     id: data.id,
     itemType: "release",
@@ -165,6 +248,10 @@ async function handleRelease(id, token) {
       title: t.title,
       duration: t.duration
     })),
+    ...extractExtras(data),
+    masterId: data.master_id || null,
+    youtubeUrl,
+    statistics: buildStatistics({ numForSale: data.num_for_sale, lowestPrice: data.lowest_price, community: data.community }),
     url: data.uri ?? `https://www.discogs.com/release/${id}`
   };
 }
@@ -175,6 +262,17 @@ async function handleTrack(firstResult, token) {
   const res = await fetch(`https://api.discogs.com/masters/${masterId}?token=${token}`);
   checkResponse(res);
   const data = await res.json();
+
+  let youtubeUrl = extractYoutubeUrl(data.videos, firstResult.title);
+  // Fall back to the master's main pressing if the master itself has no videos
+  if (!youtubeUrl && data.main_release_url) {
+    try {
+      const mainRes = await fetch(`${data.main_release_url}?token=${token}`);
+      const mainData = await mainRes.json();
+      youtubeUrl = extractYoutubeUrl(mainData.videos, firstResult.title);
+    } catch (_) {}
+  }
+
   return {
     trackTitle: firstResult.title,
     albumTitle: data.title,
@@ -184,6 +282,7 @@ async function handleTrack(firstResult, token) {
     artistId: data.artists?.[0]?.id ?? null,
     year: data.year,
     coverThumb: data.images?.[0]?.uri ?? firstResult.cover_image,
+    youtubeUrl,
     url: data.uri ?? `https://www.discogs.com/master/${masterId}`
   };
 }
