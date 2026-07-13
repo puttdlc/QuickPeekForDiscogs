@@ -1,6 +1,6 @@
 # Discogs Quick-Peek <img src="icons/icon128.png" alt="Discogs Quick-Peek icon" width="36" height="36" style="vertical-align: middle;">
 
-**Selection Lookup for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
+**Quick Peek for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
 
 ![Demo Gif](https://s13.gifyu.com/images/bdQ3Q.gif)
 

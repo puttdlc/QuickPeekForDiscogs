@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Discogs Quick-Peek",
+  "name": "Quick Peek for Discogs",
   "description": "Get an instant Discogs preview on browser. It's a way to discover music while you're reading, anywhere.",
   "version": "1.5.0",
   "permissions": ["storage", "contextMenus"],
@@ -25,8 +25,8 @@
     }
   },
   "icons": {
-    "16": "icons/icon128.png",
-    "48": "icons/icon128.png",
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }
 }
