@@ -2,9 +2,11 @@
 
 **Quick Peek for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
 
-![Demo Gif](https://s13.gifyu.com/images/bdQ3Q.gif)
+![Demo Artist GIF](https://s13.gifyu.com/images/bdeK6.gif)
 
 This extension is built on the Manifest V3 Chrome extension specification, turning the [Discogs](https://www.discogs.com) database into a convenient inline lookup tool. Easily highlight any artist, album, or track name on any webpage and instantly see release details, cover art, and marketplace info without leaving the page.
+
+![Demo Releases GIF](https://s13.gifyu.com/images/bdeK8.gif)
 
 ---
 
