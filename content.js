@@ -1041,7 +1041,10 @@ document.addEventListener("mouseup", (e) => {
   }
 
   chrome.storage.sync.get("instantLookup", ({ instantLookup }) => {
-    if (instantLookup) performLookup(selectedText, e.clientX, e.clientY);
+    if (!instantLookup) return;
+    performLookup(selectedText, e.clientX, e.clientY);
+    // Clear the highlight once the query has fired so it can't misfire on a later mouseup
+    window.getSelection().removeAllRanges();
   });
 });
 
@@ -1049,6 +1052,8 @@ document.addEventListener("mouseup", (e) => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "CONTEXT_LOOKUP") {
     performLookup(message.query, lastRightClickPos.x, lastRightClickPos.y);
+    // Clear the highlight once the query has fired so it can't misfire on a later mouseup
+    window.getSelection().removeAllRanges();
   }
 });
 
