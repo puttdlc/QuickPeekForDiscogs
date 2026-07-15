@@ -122,6 +122,8 @@ This project is built entirely on Discogs's public REST API:
 
 Quick-Peek does not collect, transmit, or store any analytics, telemetry, or browsing data. The only outbound network calls are to `api.discogs.com`, carrying your search query and your own Discogs token. Selected text never leaves the browser except as the literal search string sent to Discogs.
 
+Read the full Privacy Policy in [`PRIVACY.md`](PRIVACY.md).
+
 ## Disclaimer
 
 This is an independent, unofficial project and is not affiliated with, endorsed by, or sponsored by Discogs or Zink Media, LLC. "Discogs" is a trademark of Zink Media, LLC.
