@@ -1,5 +1,9 @@
 # Discogs Quick-Peek <img src="icons/icon128.png" alt="Discogs Quick-Peek icon" width="36" height="36" style="vertical-align: middle;">
 
+Great news, Quick Peek for Discogs is now available on the Chrome Webstore! Recommended for most users if you don't plan on making changes to your local copy.
+
+Find the Quick-Peek for Discogs on the Chrome Webstore ![here.](https://chromewebstore.google.com/detail/fjmafmlofdflddcpjofbpmabjjhjginl?utm_source=item-share-cb)
+
 **Quick Peek for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
 
 ![Demo Artist GIF](https://s13.gifyu.com/images/bdeK6.gif)
