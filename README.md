@@ -1,8 +1,11 @@
 # Discogs Quick-Peek <img src="icons/icon128.png" alt="Discogs Quick-Peek icon" width="36" height="36" style="vertical-align: middle;">
 
-Great news, Quick Peek for Discogs is now available on the Chrome Webstore! Recommended for most users if you don't plan on making changes to your local copy.
-
+---
+## Quick Peek for Discogs is now available on the Chrome Webstore!
+It is recommended for most users if you don't plan on making changes to your local copy.
 Find the Quick-Peek for Discogs on the Chrome Webstore [here.](https://chromewebstore.google.com/detail/fjmafmlofdflddcpjofbpmabjjhjginl?utm_source=item-share-cb)
+
+---
 
 **Quick Peek for Discogs!** Highlight any word or phrase on any web page and get an instant Discogs preview: artist bios and genres, album/release artwork and tracklists. It's a way to discover music while you're reading, without leaving the page to go search Discogs yourself.
 
@@ -62,6 +65,12 @@ The extension has three parts that talk to each other only through Chrome's mess
 A selection or right-click sends the query to the `background.js`, which searches Discogs, scores the results to pick the best match (weighing title overlap and popularity over raw search order), fetches that result's full details, and sends it back to render. Clicking deeper into a card repeats this by ID instead of by search, building the back-navigable stack inside the tooltip.
 
 ## Setup
+
+### Option 1: Chrome Web Store (recommended)
+
+Install directly from the [Chrome Web Store.](https://chromewebstore.google.com/detail/fjmafmlofdflddcpjofbpmabjjhjginl?utm_source=item-share-cb)
+
+### Option 2: Load manually as an unpacked extension
 
 1. **Clone or download this repository.**
 
